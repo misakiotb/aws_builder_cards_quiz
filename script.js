@@ -1,108 +1,51 @@
 document.addEventListener('DOMContentLoaded', () => {
     const cardContainer = document.getElementById('card-container');
     const reloadBtn = document.getElementById('reload-btn');
-    // Embedded CSV data to avoid CORS issues when running locally without a server
-    const CSV_DATA = `カード種別,サービス種別,サービス名
-AWSome credit,compute,Amazon EC2 Autoscaling
-AWSome credit,developer tools,AWS CDK
-AWSome credit,management & governance,AWS CloudFormation
-AWSome credit,cloud financial management,AWS Cost Management
-AWSome credit,management & governance,AWS Systems Manager
-AWSome credit,management & governance,AWS Well-Architected Tool
-TCO credit,application integration,Amazon API Gateway
-TCO credit,analytics,Amazon Athena
-TCO credit,database,Amazon Aurora
-TCO credit,networking & content delivery,Amazon CloudFront
-TCO credit,management & governance,Amazon CloudTrail
-TCO credit,management & governance,Amazon CloudWatch
-TCO credit,database,Amazon DynamoDB
-TCO credit,compute,Amazon EC2
-TCO credit,containers,Amazon ECS
-TCO credit,storage,Amazon EFS
-TCO credit,containers,Amazon EKS
-TCO credit,database,Amazon ElastiCache
-TCO credit,application integration,Amazon EventBridge
-TCO credit,analytics,Amazon Kinesis Data Firehose
-TCO credit,analytics,Amazon Kinesis Data Streams
-TCO credit,analytics,Amazon OpenSearch Service
-TCO credit,database,Amazon RDS
-TCO credit,analytics,Amazon RedShift
-TCO credit,networking & content delivery,Amazon Route53
-TCO credit,storage,Amazon S3
-TCO credit,application integration,Amazon SNS
-TCO credit,application integration,Amazon SQS
-TCO credit,application integration,Amazon Step Functions
-TCO credit,networking & content delivery,Amazon VPC
-TCO credit,containers,AWS Fargate
-TCO credit,"security, identity & compliance",AWS IAM
-TCO credit,compute,AWS Lambda
-TCO credit,networking & content delivery,Elastic Load Balancing`;
 
-    // CSV Parsing Function (Simple implementation for the given format)
-    function parseCSV(csvText) {
-        const lines = csvText.trim().split('\n');
-        const headers = lines[0].split(',').map(h => h.trim());
+    // Overlay Elements
+    const overlay = document.getElementById('overlay');
+    const closeOverlayBtn = document.getElementById('close-overlay');
+    const overlayTitle = document.getElementById('overlay-title');
+    const overlayDesc = document.getElementById('overlay-desc');
+    const overlayIcon = document.getElementById('overlay-icon');
 
-        const data = [];
-
-        for (let i = 1; i < lines.length; i++) {
-            // Handle simple comma separation, respecting quotes if necessary
-            // For this specific CSV, we can use a regex or simple split if no commas in values
-            // But line 33 has "security, identity & compliance", so we need to handle quotes.
-
-            const row = [];
-            let currentVal = '';
-            let inQuotes = false;
-
-            for (let char of lines[i]) {
-                if (char === '"') {
-                    inQuotes = !inQuotes;
-                } else if (char === ',' && !inQuotes) {
-                    row.push(currentVal.trim());
-                    currentVal = '';
-                } else {
-                    currentVal += char;
-                }
-            }
-            row.push(currentVal.trim()); // Push last value
-
-            if (row.length === headers.length) {
-                const card = {};
-                headers.forEach((header, index) => {
-                    card[header] = row[index].replace(/^"|"$/g, ''); // Remove surrounding quotes if any
-                });
-                data.push(card);
-            }
-        }
-        return data;
-    }
-
-    function loadCards() {
-        try {
-            // Use embedded data instead of fetch
-            allCards = parseCSV(CSV_DATA);
-            displayRandomCards();
-        } catch (error) {
-            console.error('Error parsing CSV:', error);
-            cardContainer.innerHTML = `<div class="error">カードデータの読み込みに失敗しました。<br>${error.message}</div>`;
-        }
+    // Check if CARD_DATA exists
+    if (typeof CARD_DATA === 'undefined') {
+        cardContainer.innerHTML = '<div class="error">データファイル (data.js) が読み込まれていません。</div>';
+        return;
     }
 
     function displayRandomCards() {
-        // Filter for "TCO credit"
-        // Note: CSV header might be "カード種別"
-        const tcoCards = allCards.filter(card => card['カード種別'] === 'TCO credit');
+        // Create a weighted deck
+        let deck = [];
+        CARD_DATA.forEach(card => {
+            // Add card 'count' times to the deck
+            for (let i = 0; i < card.count; i++) {
+                deck.push(card);
+            }
+        });
 
-        if (tcoCards.length === 0) {
-            cardContainer.innerHTML = '<div class="error">TCO credit カードが見つかりませんでした。</div>';
+        if (deck.length === 0) {
+            cardContainer.innerHTML = '<div class="error">カードデータが空です。</div>';
             return;
         }
 
-        // Shuffle and pick 5
-        const shuffled = tcoCards.sort(() => 0.5 - Math.random());
-        const selected = shuffled.slice(0, 5);
+        // Shuffle and pick 5 unique cards (based on serviceName)
+        // To ensure uniqueness while respecting probability, we can shuffle the deck
+        // and then iterate, picking unique items until we have 5.
+        const shuffledDeck = deck.sort(() => 0.5 - Math.random());
+        const selectedCards = [];
+        const selectedNames = new Set();
 
-        renderCards(selected);
+        for (const card of shuffledDeck) {
+            if (!selectedNames.has(card.serviceName)) {
+                selectedCards.push(card);
+                selectedNames.add(card.serviceName);
+            }
+            if (selectedCards.length >= 5) break;
+        }
+
+        renderCards(selectedCards);
     }
 
     function renderCards(cards) {
@@ -111,26 +54,70 @@ TCO credit,networking & content delivery,Elastic Load Balancing`;
             const cardEl = document.createElement('div');
             cardEl.className = 'card';
 
-            // Map CSV columns to display
-            const serviceName = card['サービス名'] || 'Unknown Service';
-            const serviceType = card['サービス種別'] || 'Unknown Type';
-            const cardType = card['カード種別'] || 'Unknown';
+            // State: 0 (Default), 1 (Hint)
+            // Description is shown in overlay
+            let state = 0;
+
+            const iconPath = `assets/icons/${card.icon}`;
+            // Fallback for missing icon handled by CSS or onerror event
 
             cardEl.innerHTML = `
                 <div class="card-header">
-                    <div class="card-type">${cardType}</div>
+                    <div class="card-type">${card.type}</div>
                 </div>
                 <div class="card-body">
-                    <div class="service-name">${serviceName}</div>
-                    <div class="service-type">${serviceType}</div>
+                    <img src="${iconPath}" alt="${card.serviceName}" class="service-icon" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'">
+                    <div class="service-icon-placeholder" style="display:none; width:64px; height:64px; background:#eee; border-radius:8px; align-items:center; justify-content:center; margin-bottom:15px;">No Icon</div>
+                    
+                    <div class="service-name">${card.serviceName}</div>
+                    <div class="service-type">${card.serviceType}</div>
+                    
+                    <div class="hint-area">
+                        <strong>ヒント:</strong><br>
+                        ${card.hint}
+                    </div>
                 </div>
             `;
+
+            // Click Interaction
+            cardEl.addEventListener('click', () => {
+                if (state === 0) {
+                    // Show Hint
+                    cardEl.classList.add('show-hint');
+                    state = 1;
+                } else {
+                    // Show Description Overlay
+                    showOverlay(card);
+                }
+            });
+
             cardContainer.appendChild(cardEl);
         });
     }
 
+    function showOverlay(card) {
+        overlayTitle.textContent = card.serviceName;
+        overlayDesc.textContent = card.description;
+        overlayIcon.src = `assets/icons/${card.icon}`;
+        overlayIcon.onerror = () => { overlayIcon.style.display = 'none'; };
+        overlayIcon.onload = () => { overlayIcon.style.display = 'block'; };
+
+        overlay.classList.remove('hidden');
+    }
+
+    function hideOverlay() {
+        overlay.classList.add('hidden');
+    }
+
+    // Event Listeners
     reloadBtn.addEventListener('click', displayRandomCards);
+    closeOverlayBtn.addEventListener('click', hideOverlay);
+    overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) {
+            hideOverlay();
+        }
+    });
 
     // Initial load
-    loadCards();
+    displayRandomCards();
 });

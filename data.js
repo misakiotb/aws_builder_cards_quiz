@@ -80,7 +80,7 @@ const CARD_DATA = [
         "count": 2,
         "hint": "高性能RDB",
         "description": "MySQL・PostgreSQL互換で、商用データベース並みのパフォーマンスとオープンソースの経済性を兼ね備えたリレーショナルデータベースです。",
-        "icon": "aurora.png"
+        "icon": "Aurora.png"
     },
     {
         "type": "TCO credit",
